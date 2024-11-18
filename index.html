@@ -6,101 +6,176 @@
     <title>HDB Resale Prices in Bedok</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        /* 基本的样式 */
         body {
             font-family: Arial, sans-serif;
         }
+
         svg {
             font-size: 12px;
+        }
+
+        .chart-container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* Tooltip 样式 */
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
     </style>
 </head>
 <body>
     <h2>Bedok HDB Resale Prices Scatterplot</h2>
-    <svg width="800" height="400"></svg>
+    <div class="chart-container">
+        <svg></svg>
+    </div>
 
     <script>
-        // 设定图表大小
-        const width = 800;
-        const height = 400;
-        const margin = { top: 20, right: 30, bottom: 50, left: 60 };
+        const margin = { top: 20, right: 30, bottom: 50, left: 100 };  // 增加左边边距以避免与图例重叠
+        const width = window.innerWidth * 0.8 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
 
         const svg = d3.select("svg")
-            .attr("width", width)
-            .attr("height", height);
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-        // 解析时间格式
         const parseDate = d3.timeParse("%Y-%m");
 
-        // 加载数据
-        d3.csv("Resale flat prices based on registration date from Jan-2017 onwards.csv").then(data => {
-            // 检查加载的数据
-            console.log("Loaded data:", data);
+        const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip");
 
-            // 数据预处理，只筛选 Bedok 地区的数据
-            const filteredData = data.filter(d => d.town === "Bedok");
+        d3.csv("https://raw.githubusercontent.com/Chenliaoliao/HCDIV-3/refs/heads/main/Resale%20flat%20prices%20based%20on%20registration%20date%20from%20Jan-2017%20onwards.csv").then(data => {
+            // 过滤数据
+            const currentDate = new Date();
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(currentDate.getMonth() - 6);
 
-            // 检查过滤后的数据
-            console.log("Filtered Bedok data:", filteredData);
+            const filteredData = data.filter(d => {
+                const saleDate = parseDate(d.month);
+                return (
+                    d.town && 
+                    d.town.trim().toUpperCase() === "BEDOK" && 
+                    d.flat_type === "3 ROOM" && 
+                    saleDate >= sixMonthsAgo && 
+                    saleDate <= currentDate
+                );
+            });
 
             // 转换数据类型
             filteredData.forEach(d => {
                 d.resale_price = +d.resale_price;  // 转售价格为数字
                 d.month = parseDate(d.month);      // 时间格式
-
-                // 检查转换后的每条数据
-                console.log("Processed data item:", d);
             });
 
-            // 如果过滤后的数据为空，可能是筛选条件不匹配或解析错误
-            if (filteredData.length === 0) {
-                console.warn("No data found for Bedok in the given timeframe.");
-                return;
-            }
+            // 计算六个月的平均售价
+            const avgPrice = d3.mean(filteredData, d => d.resale_price);
 
             // 设定 x 和 y 轴比例尺
             const x = d3.scaleTime()
                 .domain(d3.extent(filteredData, d => d.month))
-                .range([margin.left, width - margin.right]);
+                .range([0, width]);
 
             const y = d3.scaleLinear()
                 .domain([0, d3.max(filteredData, d => d.resale_price)]).nice()
-                .range([height - margin.bottom, margin.top]);
+                .range([height, 0]);
 
             // 绘制 x 轴
             svg.append("g")
-                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .attr("transform", "translate(0," + height + ")")
                 .call(d3.axisBottom(x).ticks(6).tickFormat(d3.timeFormat("%Y-%m")));
 
             // 绘制 y 轴
             svg.append("g")
-                .attr("transform", `translate(${margin.left},0)`)
                 .call(d3.axisLeft(y));
 
-            // 绘制散点
-            svg.append("g")
+            // 画出淡灰色的平均售价线
+            svg.append("line")
+                .attr("x1", 0)
+                .attr("x2", width)
+                .attr("y1", y(avgPrice))
+                .attr("y2", y(avgPrice))
+                .attr("stroke", "lightgray")
+                .attr("stroke-width", 2)
+                .attr("stroke-dasharray", "4");
+
+            // 创建颜色渐变
+            const colorScale = d3.scaleLinear()
+                .domain([d3.min(filteredData, d => d.resale_price), avgPrice, d3.max(filteredData, d => d.resale_price)])
+                .range(["#a8d5ba", "#006400", "#ffa500"]);
+
+            // 动画效果：从平均售价线向外扩展
+            const circles = svg.append("g")
                 .selectAll("circle")
                 .data(filteredData)
                 .enter().append("circle")
                 .attr("cx", d => x(d.month))
-                .attr("cy", d => y(d.resale_price))
-                .attr("r", 3)
-                .attr("fill", "steelblue")
-                .attr("opacity", 0.7);
+                .attr("cy", y(avgPrice))  // 初始位置在平均售价线
+                .attr("r", 0)  // 初始半径为0
+                .attr("fill", d => colorScale(d.resale_price))
+                .attr("opacity", 0.7)
+                .transition()  // 添加过渡动画
+                .duration(1500)  // 动画时长1.5秒
+                .attr("cy", d => y(d.resale_price))  // 最终位置在实际售价位置
+                .attr("r", 6)  // 最终半径
+                .delay((d, i) => i * 10);  // 每个点延迟0.01秒显示
+
+            // 悬停效果：显示价格
+            circles.on("mouseenter", function(event, d) {
+                // 放大散点
+                d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr("r", 8);  // 放大散点半径
+
+                // 显示 Tooltip
+                tooltip.transition()
+                    .duration(200)
+                    .style("opacity", 1)  // 设置透明度为1，显示 Tooltip
+
+                tooltip.html(`SGD ${d.resale_price.toLocaleString()}`)
+                    .style("left", (event.pageX + 5) + "px")
+                    .style("top", (event.pageY - 25) + "px");
+            });
+
+            circles.on("mouseleave", function() {
+                // 恢复散点大小
+                d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr("r", 6);  // 恢复半径
+
+                // 隐藏 Tooltip
+                tooltip.transition()
+                    .duration(200)
+                    .style("opacity", 0);  // 设置透明度为0，隐藏 Tooltip
+            });
 
             // 添加标题和标签
             svg.append("text")
                 .attr("x", width / 2)
-                .attr("y", height - margin.bottom + 40)
+                .attr("y", height + 40)
                 .attr("text-anchor", "middle")
                 .text("Month");
 
             svg.append("text")
                 .attr("x", -height / 2)
-                .attr("y", margin.left - 40)
+                .attr("y", -40)
                 .attr("transform", "rotate(-90)")
                 .attr("text-anchor", "middle")
                 .text("Resale Price (SGD)");
+
         }).catch(error => console.error("Error loading or processing data:", error));
     </script>
 </body>

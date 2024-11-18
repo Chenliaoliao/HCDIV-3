@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HDB Resale Prices in Fengshan (Last 6 Months)</title>
+    <title>HDB Resale Prices in Bedok</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         /* 基本的样式 */
@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <h2>Fengshan HDB Resale Prices in the Last 6 Months</h2>
+    <h2>Bedok HDB Resale Prices Scatterplot</h2>
     <svg width="800" height="400"></svg>
 
     <script>
@@ -34,18 +34,29 @@
 
         // 加载数据
         d3.csv("Resale flat prices based on registration date from Jan-2017 onwards.csv").then(data => {
-            // 数据预处理
-            const filteredData = data.filter(d => {
-                return d.town === "Bedok" &&
-                       d.street_name.includes("Fengshan") &&
-                       parseDate(d.month) >= new Date(new Date().setMonth(new Date().getMonth() - 6));
-            });
+            // 检查加载的数据
+            console.log("Loaded data:", data);
+
+            // 数据预处理，只筛选 Bedok 地区的数据
+            const filteredData = data.filter(d => d.town === "Bedok");
+
+            // 检查过滤后的数据
+            console.log("Filtered Bedok data:", filteredData);
 
             // 转换数据类型
             filteredData.forEach(d => {
                 d.resale_price = +d.resale_price;  // 转售价格为数字
                 d.month = parseDate(d.month);      // 时间格式
+
+                // 检查转换后的每条数据
+                console.log("Processed data item:", d);
             });
+
+            // 如果过滤后的数据为空，可能是筛选条件不匹配或解析错误
+            if (filteredData.length === 0) {
+                console.warn("No data found for Bedok in the given timeframe.");
+                return;
+            }
 
             // 设定 x 和 y 轴比例尺
             const x = d3.scaleTime()

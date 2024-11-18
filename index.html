@@ -11,12 +11,12 @@
         }
 
         svg {
-            font-size: 12px;
+            font-size: 16px;  /* 增加字体大小 */
         }
 
         .chart-container {
             width: 100%;
-            max-width: 900px;
+            max-width: 1200px;  /* 设置最大宽度为1200px */
             margin: 0 auto;
         }
 
@@ -31,18 +31,25 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
+
+        /* Legend style */
+        .legend {
+            font-size: 14px;
+            margin-top: 20px;  /* 增加图例与图表的间距 */
+        }
     </style>
 </head>
 <body>
-    <h2>Bedok HDB Resale Prices Scatterplot</h2>
+    <h2>Bedok HDB Resale Prices Scatterplot with Average Price Trend Line</h2>
     <div class="chart-container">
         <svg></svg>
+        <div class="legend"></div>
     </div>
 
     <script>
-        const margin = { top: 20, right: 30, bottom: 50, left: 100 };  // 增加左边边距以避免与图例重叠
-        const width = window.innerWidth * 0.8 - margin.left - margin.right;
-        const height = 400 - margin.top - margin.bottom;
+        const margin = { top: 40, right: 30, bottom: 60, left: 120 };  // 增加边距使图表更大
+        const width = window.innerWidth * 0.8 - margin.left - margin.right;  // 使宽度占屏幕的80%
+        const height = 600 - margin.top - margin.bottom;  // 增加高度
 
         const svg = d3.select("svg")
             .attr("width", width + margin.left + margin.right)
@@ -79,8 +86,12 @@
                 d.month = parseDate(d.month);      // 时间格式
             });
 
-            // 计算六个月的平均售价
-            const avgPrice = d3.mean(filteredData, d => d.resale_price);
+            // 计算每个月的平均售价
+            const nestedData = d3.groups(filteredData, d => d.month);
+            const avgPriceData = nestedData.map(([month, values]) => ({
+                month,
+                avg_price: d3.mean(values, d => d.resale_price)
+            }));
 
             // 设定 x 和 y 轴比例尺
             const x = d3.scaleTime()
@@ -100,67 +111,55 @@
             svg.append("g")
                 .call(d3.axisLeft(y));
 
-            // 画出淡灰色的平均售价线
-            svg.append("line")
-                .attr("x1", 0)
-                .attr("x2", width)
-                .attr("y1", y(avgPrice))
-                .attr("y2", y(avgPrice))
-                .attr("stroke", "lightgray")
-                .attr("stroke-width", 2)
-                .attr("stroke-dasharray", "4");
-
-            // 创建颜色渐变
-            const colorScale = d3.scaleLinear()
-                .domain([d3.min(filteredData, d => d.resale_price), avgPrice, d3.max(filteredData, d => d.resale_price)])
-                .range(["#a8d5ba", "#006400", "#ffa500"]);
-
-            // 动画效果：从平均售价线向外扩展
-            const circles = svg.append("g")
+            // 绘制散点
+            svg.append("g")
                 .selectAll("circle")
                 .data(filteredData)
                 .enter().append("circle")
                 .attr("cx", d => x(d.month))
-                .attr("cy", y(avgPrice))  // 初始位置在平均售价线
-                .attr("r", 0)  // 初始半径为0
-                .attr("fill", d => colorScale(d.resale_price))
-                .attr("opacity", 0.7)
-                .transition()  // 添加过渡动画
-                .duration(1500)  // 动画时长1.5秒
-                .attr("cy", d => y(d.resale_price))  // 最终位置在实际售价位置
-                .attr("r", 6)  // 最终半径
-                .delay((d, i) => i * 10);  // 每个点延迟0.01秒显示
+                .attr("cy", d => y(d.resale_price))
+                .attr("r", 6)
+                .attr("fill", d => d.resale_price >= d3.mean(filteredData, d => d.resale_price) ? "#ffa500" : "#a8d5ba")
+                .attr("opacity", 0.7);
 
             // 悬停效果：显示价格
-            circles.on("mouseenter", function(event, d) {
-                // 放大散点
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("r", 8);  // 放大散点半径
+            svg.selectAll("circle")
+                .on("mouseenter", function(event, d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("r", 8);
 
-                // 显示 Tooltip
-                tooltip.transition()
-                    .duration(200)
-                    .style("opacity", 1)  // 设置透明度为1，显示 Tooltip
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 1);
 
-                tooltip.html(`SGD ${d.resale_price.toLocaleString()}`)
-                    .style("left", (event.pageX + 5) + "px")
-                    .style("top", (event.pageY - 25) + "px");
-            });
+                    tooltip.html(`SGD ${d.resale_price.toLocaleString()}`)
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 25) + "px");
+                })
+                .on("mouseleave", function() {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("r", 6);
 
-            circles.on("mouseleave", function() {
-                // 恢复散点大小
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("r", 6);  // 恢复半径
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0);
+                });
 
-                // 隐藏 Tooltip
-                tooltip.transition()
-                    .duration(200)
-                    .style("opacity", 0);  // 设置透明度为0，隐藏 Tooltip
-            });
+            // 绘制折线图：显示平均转售价格
+            const line = d3.line()
+                .x(d => x(d.month))
+                .y(d => y(d.avg_price));
+
+            svg.append("path")
+                .datum(avgPriceData)
+                .attr("fill", "none")
+                .attr("stroke", "#006400")
+                .attr("stroke-width", 2)
+                .attr("d", line);
 
             // 添加标题和标签
             svg.append("text")
@@ -171,10 +170,45 @@
 
             svg.append("text")
                 .attr("x", -height / 2)
-                .attr("y", -40)
+                .attr("y", -50)
                 .attr("transform", "rotate(-90)")
                 .attr("text-anchor", "middle")
                 .text("Resale Price (SGD)");
+
+            // 添加图例
+            const legend = d3.select(".legend")
+                .append("svg")
+                .attr("width", 300)
+                .attr("height", 50);
+
+            // Orange for above average and green for below average
+            legend.append("circle")
+                .attr("cx", 20)
+                .attr("cy", 20)
+                .attr("r", 6)
+                .attr("fill", "#ffa500");
+
+            legend.append("text")
+                .attr("x", 40)
+                .attr("y", 25)
+                .attr("dx", 5)  // 增加文字与图例之间的距离
+                .style("font-size", "14px")  /* 增加文字大小 */
+                .text("Above Average Price");
+
+            legend.append("circle")
+                .attr("cx", 20)
+                .attr("cy", 40)
+                .attr("r", 6)
+                .attr("fill", "#a8d5ba");
+
+            legend.append("text")
+                .attr("x", 40)
+                .attr("y", 45)
+                .attr("dx", 5)  // 增加文字与图例之间的距离
+                .style("font-size", "14px")  /* 增加文字大小 */
+                .text("Below Average Price");
+            
+            
 
         }).catch(error => console.error("Error loading or processing data:", error));
     </script>
